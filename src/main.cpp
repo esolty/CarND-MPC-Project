@@ -32,6 +32,7 @@ string hasData(string s) {
   return "";
 }
 
+
 // Evaluate a polynomial.
 double polyeval(Eigen::VectorXd coeffs, double x) {
   double result = 0.0;
@@ -91,6 +92,8 @@ int main() {
           double py = j[1]["y"];
           double psi = j[1]["psi"];
           double v = j[1]["speed"];
+          double steer_value = j[1]["steering_angle"];
+          double throttle_value = j[1]["throttle"];
 
           /*
           * TODO: Calculate steering angle and throttle using MPC.
@@ -98,35 +101,78 @@ int main() {
           * Both are in between [-1, 1].
           *
           */
-          double steer_value;
-          double throttle_value;
+          double Lf = 2.67;
+          double latency = 0.1;
 
-          json msgJson;
-          // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
-          // Otherwise the values will be in between [-deg2rad(25), deg2rad(25] instead of [-1, 1].
-          msgJson["steering_angle"] = steer_value;
-          msgJson["throttle"] = throttle_value;
+          // simplication making car at origin and psi at 0 
+          for (int i = 0; i < ptsx.size(); i++) {
+            // shift car angle to 90 degrees
+            double shift_x = ptsx[i]-px;
+            double shift_y = ptsy[i]-py;
 
-          //Display the MPC predicted trajectory 
-          vector<double> mpc_x_vals;
-          vector<double> mpc_y_vals;
+            // car same orientation as line
+            ptsx[i] = (shift_x *cos(-psi)-shift_y*sin(-psi));
+            ptsy[i] = (shift_x *sin(-psi)+shift_y*cos(-psi));
+          }
+          
+          // transform coords to VectorXD
+          double* ptrx = &ptsx[0];
+          Eigen::Map<Eigen::VectorXd> ptsx_transform(ptrx,6);
 
-          //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
-          // the points in the simulator are connected by a Green line
+          double* ptry = &ptsy[0];
+          Eigen::Map<Eigen::VectorXd> ptsy_transform(ptry,6);
 
-          msgJson["mpc_x"] = mpc_x_vals;
-          msgJson["mpc_y"] = mpc_y_vals;
+          // fit a polynomial to waypoints
+          auto coeffs = polyfit(ptsx_transform,ptsy_transform,3);
 
-          //Display the waypoints/reference line
+          // future position after latency
+          psi = (-v* steer_value * latency)/Lf;
+          px = v*cos(psi) * latency;
+          py = v*sin(psi) * latency;
+          v = v + throttle_value * latency;
+
+          double cte = polyeval(coeffs,px);
+          double epsi = psi - atan(coeffs[1] + 2*coeffs[2]*px + 3*coeffs[3]*px*px);
+
+          Eigen::VectorXd state(6);
+          state << px, 0, psi, v, cte, epsi;
+
+          auto vars = mpc.Solve(state, coeffs);
+
           vector<double> next_x_vals;
           vector<double> next_y_vals;
 
-          //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
-          // the points in the simulator are connected by a Yellow line
+          double poly_inc = 2.5;
+          int num_points = 25;
+          for (int i = 1; i < num_points; i++) {
+            next_x_vals.push_back(poly_inc*i);
+            next_y_vals.push_back(polyeval(coeffs,poly_inc*i));
+          }
 
+          vector<double> mpc_x_vals;
+          vector<double> mpc_y_vals;
+
+          // even x, odds will be y's
+          for (int i = 2; i < vars.size(); i++) {
+            if(i%2 == 0) {
+              mpc_x_vals.push_back(vars[i]);
+            }
+            else {
+              mpc_y_vals.push_back(vars[i]);
+              }
+          }
+
+          //double steer_value;
+          //double throttle_value;
+
+          json msgJson;
+          msgJson["steering_angle"] = -vars[0];
+          //msgJson["steering_angle"] = vars[0]/(deg2rad(25)*Lf);
+          msgJson["throttle"] = vars[1];
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
-
+          msgJson["mpc_x"] = mpc_x_vals;
+          msgJson["mpc_y"] = mpc_y_vals;
 
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
           std::cout << msg << std::endl;
