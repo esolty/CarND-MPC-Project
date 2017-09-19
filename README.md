@@ -12,6 +12,8 @@ State. The Actuators, which are variables that control and move the vehicle,
 included the steering wheel angle with values between -25 degrees and 25 degrees
 update equations and the throttle which accelerated the vehicle and had values between -1 and 1. In addition the distance from the front of the vehicle to its center of gravity was used to determine turn rate. This is important as the larger a vehicle the slower it’s turn rate is. The difference between the ideal path line and the current vehicles position was considered the cross track error (CTE). The orientation error of the vehicle was considered as the EPSI.
 
+The MPC gets the trajectory from the simulator as an array of waypoints called ptsx and ptsy in the world map. The CTE and the EPSI are then transformed in the vehicle coordinate space (the vehicle is at 0,0). Following this a 3rd order polynomial is calculated and predicts N states of the vehicle in space and time with a time delay between calculations of dt. The polynomial function at point x = 0 will be equal to the CTE and the EPSI will be the negative arctan of the first derivative at the same point. The MPC then predicts the vehicles state, and corresponding  actuator vectors with the Interior Point Optimizer. The cost function in the class FG_eval begining with fg[0] = 0 is used to predict the preceding optimal states and actuators with the polynomial being completed on line 104 in MPC.cpp. 
+
 For driving within the simulator the model is sufficient but as does not account for variables experienced during actual driving such as variable road surface friction, wind etc.
 
 ## Parameters
@@ -20,7 +22,22 @@ The elapsed duration (dt) to wait before running the model was 0.2 and was proba
 
 The number of future timesteps (N) chosen was 15. With N = 15 the car stayed on almost exactly on the ideal path line. An N = 20 also had a great trajectory but the vehicle seemed to slow more around curves than was needed. An N = 10 had a slightly more inaccurate trajectory but it’s speed was quicker around corners.
 
-Latency was used to imitate a processing delay.
+A delay of 100 m/s between sensing and processing the model is present to simulate more realistic conidtions outside the simulator. An equal latency value of 100 m/s is added to the model to change the vehicles state in time and place to accomodate the delay as is shown below. The Y state will be zero as the vehicle will move along the same plane.
+
+          double latency = 0.1;
+          double Lf = 2.67;
+
+          // position after latency
+          psi = v * (-steer_value) / Lf * latency;
+          px = v * latency;
+          //py = v*sin(psi) * latency; // will be zero 
+          v = v + throttle_value * latency;
+          cte = cte + v * sin(epsi) * latency;
+          epsi = epsi + v * (-steer_value) / Lf * latency;
+
+          Eigen::VectorXd state(6);
+          state << px, 0, psi, v, cte, epsi;
+
 ---
 
 ## Dependencies

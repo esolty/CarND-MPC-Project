@@ -101,8 +101,6 @@ int main() {
           * Both are in between [-1, 1].
           *
           */
-          double Lf = 2.67;
-          double latency = 0.1;
 
           // simplication making car at origin and psi at 0 
           for (int i = 0; i < ptsx.size(); i++) {
@@ -125,14 +123,21 @@ int main() {
           // fit a polynomial to waypoints
           auto coeffs = polyfit(ptsx_transform,ptsy_transform,3);
 
-          // future position after latency
-          psi = (-v* steer_value * latency)/Lf;
-          px = v*cos(psi) * latency;
-          py = v*sin(psi) * latency;
-          v = v + throttle_value * latency;
+          // errors
+          double cte = coeffs[0];
+          double epsi = -atan(coeffs[1]);
 
-          double cte = polyeval(coeffs,px);
-          double epsi = psi - atan(coeffs[1] + 2*coeffs[2]*px + 3*coeffs[3]*px*px);
+          double latency = 0.1;
+          double Lf = 2.67;
+
+          // position after latency
+
+          psi = v * (-steer_value) / Lf * latency;
+          px = v * latency;
+          //py = v*sin(psi) * latency; // will be zero
+          v = v + throttle_value * latency;
+          cte = cte + v * sin(epsi) * latency;
+          epsi = epsi + v * (-steer_value) / Lf * latency;
 
           Eigen::VectorXd state(6);
           state << px, 0, psi, v, cte, epsi;
